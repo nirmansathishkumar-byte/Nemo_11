@@ -1,0 +1,837 @@
+import cv2
+import numpy as np
+import mediapipe as mp
+import random
+import time
+import os
+import urllib.request
+
+# ============================================================
+# SETTINGS
+# ============================================================
+
+WIDTH = 900
+HEIGHT = 700
+
+ROAD_LEFT = 180
+ROAD_RIGHT = 720
+
+CAR_WIDTH = 65
+CAR_HEIGHT = 105
+
+PLAYER_START_X = WIDTH // 2 - CAR_WIDTH // 2
+PLAYER_START_Y = HEIGHT - 150
+
+# ============================================================
+# COLORS - BGR
+# ============================================================
+
+BLACK = (0, 0, 0)
+WHITE = (255, 255, 255)
+GRAY = (65, 65, 65)
+GREEN = (40, 140, 40)
+
+BLUE = (255, 80, 30)
+RED = (30, 30, 230)
+
+WINDOW_BLUE = (180, 200, 220)
+YELLOW = (0, 255, 255)
+
+# ============================================================
+# CAMERA
+# ============================================================
+
+camera = cv2.VideoCapture(0)
+
+if not camera.isOpened():
+    print("ERROR: Camera could not be opened.")
+    print("Give VS Code camera permission in:")
+    print("System Settings -> Privacy & Security -> Camera")
+    raise SystemExit
+
+camera.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+
+# ============================================================
+# MEDIAPIPE MODEL
+# ============================================================
+
+MODEL_FILE = "hand_landmarker.task"
+
+MODEL_URL = (
+    "https://storage.googleapis.com/mediapipe-models/"
+    "hand_landmarker/hand_landmarker/float16/1/"
+    "hand_landmarker.task"
+)
+
+if not os.path.exists(MODEL_FILE):
+
+    print("Downloading hand tracking model...")
+
+    try:
+        urllib.request.urlretrieve(
+            MODEL_URL,
+            MODEL_FILE
+        )
+
+        print("Model downloaded.")
+
+    except Exception as error:
+
+        print("Could not download the hand model.")
+        print(error)
+
+        camera.release()
+        raise SystemExit
+
+
+# ============================================================
+# MEDIAPIPE HAND LANDMARKER
+# ============================================================
+
+BaseOptions = mp.tasks.BaseOptions
+VisionRunningMode = mp.tasks.vision.RunningMode
+
+HandLandmarkerOptions = (
+    mp.tasks.vision.HandLandmarkerOptions
+)
+
+options = HandLandmarkerOptions(
+
+    base_options=BaseOptions(
+        model_asset_path=MODEL_FILE
+    ),
+
+    running_mode=VisionRunningMode.VIDEO,
+
+    num_hands=1,
+
+    min_hand_detection_confidence=0.5,
+
+    min_hand_presence_confidence=0.5,
+
+    min_tracking_confidence=0.5
+)
+
+landmarker = (
+    mp.tasks.vision.HandLandmarker
+    .create_from_options(options)
+)
+
+# ============================================================
+# GAME VARIABLES
+# ============================================================
+
+player_x = PLAYER_START_X
+player_y = PLAYER_START_Y
+
+enemies = []
+
+score = 0
+
+game_over = False
+
+# Red car speed
+enemy_speed = 8
+
+# How often red cars appear
+spawn_timer = 0
+spawn_delay = 55
+
+# Road animation
+road_offset = 0
+
+# ============================================================
+# DRAW CAR
+# ============================================================
+
+def draw_car(frame, x, y, body_color):
+
+    x = int(x)
+    y = int(y)
+
+    # Main body
+    cv2.rectangle(
+        frame,
+        (x, y),
+        (x + CAR_WIDTH, y + CAR_HEIGHT),
+        body_color,
+        -1
+    )
+
+    # Roof
+    cv2.rectangle(
+        frame,
+        (x + 9, y + 20),
+        (x + CAR_WIDTH - 9, y + 65),
+        WINDOW_BLUE,
+        -1
+    )
+
+    # Window divider
+    cv2.line(
+        frame,
+        (x + CAR_WIDTH // 2, y + 20),
+        (x + CAR_WIDTH // 2, y + 65),
+        GRAY,
+        2
+    )
+
+    # Front light
+    cv2.rectangle(
+        frame,
+        (x + 8, y + 5),
+        (x + 22, y + 15),
+        YELLOW,
+        -1
+    )
+
+    cv2.rectangle(
+        frame,
+        (x + CAR_WIDTH - 22, y + 5),
+        (x + CAR_WIDTH - 8, y + 15),
+        YELLOW,
+        -1
+    )
+
+    # Wheels
+    cv2.rectangle(
+        frame,
+        (x - 7, y + 20),
+        (x + 5, y + 45),
+        BLACK,
+        -1
+    )
+
+    cv2.rectangle(
+        frame,
+        (x + CAR_WIDTH - 5, y + 20),
+        (x + CAR_WIDTH + 7, y + 45),
+        BLACK,
+        -1
+    )
+
+    cv2.rectangle(
+        frame,
+        (x - 7, y + 70),
+        (x + 5, y + 95),
+        BLACK,
+        -1
+    )
+
+    cv2.rectangle(
+        frame,
+        (x + CAR_WIDTH - 5, y + 70),
+        (x + CAR_WIDTH + 7, y + 95),
+        BLACK,
+        -1
+    )
+
+
+# ============================================================
+# CREATE RED CAR
+# ============================================================
+
+def create_enemy():
+
+    # Random position on road
+    x = random.randint(
+        ROAD_LEFT + 20,
+        ROAD_RIGHT - CAR_WIDTH - 20
+    )
+
+    # Start above screen
+    y = -CAR_HEIGHT - random.randint(0, 200)
+
+    enemies.append({
+        "x": x,
+        "y": y,
+        "speed": enemy_speed
+    })
+
+
+# ============================================================
+# COLLISION
+# ============================================================
+
+def check_collision(px, py, ex, ey):
+
+    margin = 10
+
+    return (
+        px + margin < ex + CAR_WIDTH - margin
+        and
+        px + CAR_WIDTH - margin > ex + margin
+        and
+        py + margin < ey + CAR_HEIGHT - margin
+        and
+        py + CAR_HEIGHT - margin > ey + margin
+    )
+
+
+# ============================================================
+# RESET GAME
+# ============================================================
+
+def reset_game():
+
+    global player_x
+    global player_y
+    global enemies
+    global score
+    global enemy_speed
+    global spawn_timer
+    global spawn_delay
+    global road_offset
+    global game_over
+
+    player_x = PLAYER_START_X
+    player_y = PLAYER_START_Y
+
+    enemies = []
+
+    score = 0
+
+    enemy_speed = 8
+
+    spawn_timer = 0
+
+    spawn_delay = 55
+
+    road_offset = 0
+
+    game_over = False
+
+
+# ============================================================
+# START GAME
+# ============================================================
+
+print()
+print("==============================================")
+print("       GESTURE CONTROLLED CAR GAME")
+print("==============================================")
+print()
+print("MOVE HAND:")
+print()
+print("LEFT       -> CAR LEFT")
+print("RIGHT      -> CAR RIGHT")
+print("UP         -> CAR FORWARD")
+print("DOWN       -> CAR BACK")
+print()
+print("RED CARS COME TOWARD YOU")
+print()
+print("R -> Restart")
+print("Q -> Quit")
+print()
+print("Starting...")
+print()
+
+start_time = time.time()
+
+# ============================================================
+# MAIN GAME LOOP
+# ============================================================
+
+while True:
+
+    # ========================================================
+    # CAMERA
+    # ========================================================
+
+    success, camera_frame = camera.read()
+
+    if not success:
+        print("Could not read camera.")
+        break
+
+    # Mirror camera
+    camera_frame = cv2.flip(
+        camera_frame,
+        1
+    )
+
+    # ========================================================
+    # HAND TRACKING
+    # ========================================================
+
+    rgb = cv2.cvtColor(
+        camera_frame,
+        cv2.COLOR_BGR2RGB
+    )
+
+    mp_image = mp.Image(
+        image_format=mp.ImageFormat.SRGB,
+        data=rgb
+    )
+
+    timestamp = int(
+        (time.time() - start_time) * 1000
+    )
+
+    result = landmarker.detect_for_video(
+        mp_image,
+        timestamp
+    )
+
+    hand_detected = False
+
+    if result.hand_landmarks:
+
+        hand_detected = True
+
+        hand = result.hand_landmarks[0]
+
+        # Use palm landmark
+        palm = hand[9]
+
+        hand_x = palm.x
+        hand_y = palm.y
+
+        # Camera dimensions
+        cam_h, cam_w, _ = camera_frame.shape
+
+        hand_pixel_x = int(
+            hand_x * cam_w
+        )
+
+        hand_pixel_y = int(
+            hand_y * cam_h
+        )
+
+        # Draw tracking point
+        cv2.circle(
+            camera_frame,
+            (hand_pixel_x, hand_pixel_y),
+            15,
+            GREEN,
+            -1
+        )
+
+        cv2.circle(
+            camera_frame,
+            (hand_pixel_x, hand_pixel_y),
+            25,
+            WHITE,
+            2
+        )
+
+        # ====================================================
+        # HORIZONTAL MOVEMENT
+        # ====================================================
+
+        target_x = int(
+            ROAD_LEFT
+            + hand_x
+            * (
+                ROAD_RIGHT
+                - ROAD_LEFT
+                - CAR_WIDTH
+            )
+        )
+
+        # Smooth horizontal movement
+        player_x += (
+            target_x - player_x
+        ) * 0.25
+
+        # ====================================================
+        # VERTICAL MOVEMENT
+        # ====================================================
+
+        # Map hand Y to road area.
+        #
+        # hand at top = car moves forward
+        # hand at bottom = car moves backward
+
+        target_y = int(
+            100
+            + hand_y
+            * (
+                HEIGHT
+                - CAR_HEIGHT
+                - 100
+            )
+        )
+
+        # Smooth vertical movement
+        player_y += (
+            target_y - player_y
+        ) * 0.18
+
+        # Keep player inside road
+        player_x = max(
+            ROAD_LEFT,
+            min(
+                player_x,
+                ROAD_RIGHT - CAR_WIDTH
+            )
+        )
+
+        # Keep player inside screen
+        player_y = max(
+            80,
+            min(
+                player_y,
+                HEIGHT - CAR_HEIGHT - 20
+            )
+        )
+
+        cv2.putText(
+            camera_frame,
+            "HAND TRACKED",
+            (20, 40),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.8,
+            GREEN,
+            2
+        )
+
+    else:
+
+        cv2.putText(
+            camera_frame,
+            "SHOW YOUR HAND",
+            (20, 40),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.8,
+            RED,
+            2
+        )
+
+    # ========================================================
+    # KEYBOARD BACKUP
+    # ========================================================
+
+    key = cv2.waitKey(1) & 0xFF
+
+    if not game_over:
+
+        if key == ord("a"):
+            player_x -= 15
+
+        if key == ord("d"):
+            player_x += 15
+
+        if key == ord("w"):
+            player_y -= 15
+
+        if key == ord("s"):
+            player_y += 15
+
+        # Arrow keys
+        if key == 81:
+            player_x -= 15
+
+        if key == 83:
+            player_x += 15
+
+        if key == 82:
+            player_y -= 15
+
+        if key == 84:
+            player_y += 15
+
+    # Keep player in road
+    player_x = max(
+        ROAD_LEFT,
+        min(
+            player_x,
+            ROAD_RIGHT - CAR_WIDTH
+        )
+    )
+
+    player_y = max(
+        80,
+        min(
+            player_y,
+            HEIGHT - CAR_HEIGHT - 20
+        )
+    )
+
+    # ========================================================
+    # GAME SCREEN
+    # ========================================================
+
+    game = np.zeros(
+        (HEIGHT, WIDTH, 3),
+        dtype=np.uint8
+    )
+
+    # Grass
+    game[:] = GREEN
+
+    # Road
+    cv2.rectangle(
+        game,
+        (ROAD_LEFT, 0),
+        (ROAD_RIGHT, HEIGHT),
+        GRAY,
+        -1
+    )
+
+    # ========================================================
+    # MOVING ROAD
+    # ========================================================
+
+    if not game_over:
+
+        road_offset += 10
+
+        if road_offset >= 100:
+            road_offset = 0
+
+    # Lane lines
+    lane_width = (
+        ROAD_RIGHT - ROAD_LEFT
+    ) // 3
+
+    for lane in range(1, 3):
+
+        line_x = (
+            ROAD_LEFT
+            + lane * lane_width
+        )
+
+        y = -100 + road_offset
+
+        while y < HEIGHT:
+
+            cv2.rectangle(
+                game,
+                (line_x - 4, int(y)),
+                (line_x + 4, int(y + 55)),
+                WHITE,
+                -1
+            )
+
+            y += 100
+
+    # Road borders
+    cv2.line(
+        game,
+        (ROAD_LEFT, 0),
+        (ROAD_LEFT, HEIGHT),
+        WHITE,
+        6
+    )
+
+    cv2.line(
+        game,
+        (ROAD_RIGHT, 0),
+        (ROAD_RIGHT, HEIGHT),
+        WHITE,
+        6
+    )
+
+    # ========================================================
+    # CREATE RED CARS
+    # ========================================================
+
+    if not game_over:
+
+        spawn_timer += 1
+
+        if spawn_timer >= spawn_delay:
+
+            create_enemy()
+
+            spawn_timer = 0
+
+    # ========================================================
+    # RED CARS MOVE DOWN
+    # ========================================================
+    #
+    # THIS IS THE OPPOSITE DIRECTION TO YOUR CAR'S
+    # FORWARD MOVEMENT.
+    #
+    # ========================================================
+
+    if not game_over:
+
+        for enemy in enemies[:]:
+
+            enemy["y"] += enemy["speed"]
+
+            # Red car passed player
+            if enemy["y"] > HEIGHT:
+
+                enemies.remove(enemy)
+
+                score += 1
+
+                # Increase difficulty
+                if score % 5 == 0:
+
+                    enemy_speed += 1
+
+                    spawn_delay = max(
+                        25,
+                        spawn_delay - 3
+                    )
+
+    # ========================================================
+    # DRAW RED CARS
+    # ========================================================
+
+    for enemy in enemies:
+
+        draw_car(
+            game,
+            enemy["x"],
+            enemy["y"],
+            RED
+        )
+
+    # ========================================================
+    # COLLISION
+    # ========================================================
+
+    if not game_over:
+
+        for enemy in enemies:
+
+            if check_collision(
+                player_x,
+                player_y,
+                enemy["x"],
+                enemy["y"]
+            ):
+
+                game_over = True
+
+    # ========================================================
+    # DRAW PLAYER CAR
+    # ========================================================
+
+    draw_car(
+        game,
+        player_x,
+        player_y,
+        BLUE
+    )
+
+    # ========================================================
+    # HUD
+    # ========================================================
+
+    cv2.putText(
+        game,
+        f"SCORE: {score}",
+        (25, 50),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        1.1,
+        WHITE,
+        3
+    )
+
+    cv2.putText(
+        game,
+        "BLUE = YOUR CAR",
+        (25, 90),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.6,
+        BLUE,
+        2
+    )
+
+    cv2.putText(
+        game,
+        "RED = ONCOMING TRAFFIC",
+        (25, 120),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.6,
+        RED,
+        2
+    )
+
+    # ========================================================
+    # GAME OVER
+    # ========================================================
+
+    if game_over:
+
+        cv2.rectangle(
+            game,
+            (130, 190),
+            (770, 510),
+            BLACK,
+            -1
+        )
+
+        cv2.putText(
+            game,
+            "CRASH!",
+            (315, 290),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1.8,
+            RED,
+            5
+        )
+
+        cv2.putText(
+            game,
+            f"SCORE: {score}",
+            (330, 355),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1.1,
+            WHITE,
+            3
+        )
+
+        cv2.putText(
+            game,
+            "PRESS R TO RESTART",
+            (275, 425),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.8,
+            YELLOW,
+            2
+        )
+
+        cv2.putText(
+            game,
+            "PRESS Q TO QUIT",
+            (315, 470),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.8,
+            WHITE,
+            2
+        )
+
+    # ========================================================
+    # DISPLAY
+    # ========================================================
+
+    cv2.imshow(
+        "GESTURE CAR GAME",
+        game
+    )
+
+    cv2.imshow(
+        "HAND CAMERA",
+        camera_frame
+    )
+
+    # ========================================================
+    # QUIT / RESTART
+    # ========================================================
+
+    if key == ord("q"):
+        break
+
+    if key == ord("r") and game_over:
+        reset_game()
+
+
+# ============================================================
+# CLEANUP
+# ============================================================
+
+landmarker.close()
+
+camera.release()
+
+cv2.destroyAllWindows()
+
+print("Game closed.")
