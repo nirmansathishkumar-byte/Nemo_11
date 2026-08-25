@@ -1,0 +1,512 @@
+import tkinter as tk
+from tkinter import messagebox
+import math
+
+
+# =========================================================
+# COLORS
+# =========================================================
+
+BG = "#101217"
+CARD = "#1B1F27"
+INPUT_BG = "#272C35"
+TEXT = "#FFFFFF"
+SECONDARY = "#AEB5C2"
+ACCENT = "#FF9500"
+GREEN = "#2ECC71"
+BLUE = "#3498DB"
+
+
+# =========================================================
+# MAIN WINDOW
+# =========================================================
+
+window = tk.Tk()
+
+window.title("Car Performance Comparator")
+window.geometry("900x760")
+
+window.resizable(False, False)
+
+window.configure(bg=BG)
+
+
+# =========================================================
+# TITLE
+# =========================================================
+
+title = tk.Label(
+    window,
+    text="🏁 CAR PERFORMANCE COMPARATOR",
+    font=("Arial", 25, "bold"),
+    bg=BG,
+    fg=TEXT
+)
+
+title.pack(pady=(20, 5))
+
+
+subtitle = tk.Label(
+    window,
+    text="Compare two cars side-by-side",
+    font=("Arial", 11),
+    bg=BG,
+    fg=SECONDARY
+)
+
+subtitle.pack(pady=(0, 20))
+
+
+# =========================================================
+# CAR INPUT AREA
+# =========================================================
+
+cars_frame = tk.Frame(
+    window,
+    bg=BG
+)
+
+cars_frame.pack()
+
+
+# =========================================================
+# CREATE CAR INPUT CARD
+# =========================================================
+
+def create_car_card(parent, title_text):
+
+    card = tk.Frame(
+        parent,
+        bg=CARD,
+        width=390,
+        height=250
+    )
+
+    card.pack_propagate(False)
+
+    title = tk.Label(
+        card,
+        text=title_text,
+        font=("Arial", 19, "bold"),
+        bg=CARD,
+        fg=TEXT
+    )
+
+    title.pack(pady=(15, 10))
+
+    entries = {}
+
+    fields = [
+        ("Car Name", "BMW M5"),
+        ("Horsepower (HP)", "617"),
+        ("Weight (kg)", "1970"),
+        ("Top Speed (km/h)", "305")
+    ]
+
+    for label_text, default in fields:
+
+        row = tk.Frame(
+            card,
+            bg=CARD
+        )
+
+        row.pack(
+            fill="x",
+            padx=15,
+            pady=4
+        )
+
+        label = tk.Label(
+            row,
+            text=label_text,
+            font=("Arial", 10),
+            bg=CARD,
+            fg=SECONDARY,
+            width=17,
+            anchor="w"
+        )
+
+        label.pack(side="left")
+
+        entry = tk.Entry(
+            row,
+            font=("Arial", 11),
+            bg=INPUT_BG,
+            fg=TEXT,
+            insertbackground=TEXT,
+            bd=0,
+            justify="center",
+            width=16
+        )
+
+        entry.pack(side="right")
+
+        entry.insert(0, default)
+
+        entries[label_text] = entry
+
+    return entries
+
+
+car1 = create_car_card(
+    cars_frame,
+    "🚘 CAR 1"
+)
+
+cars_frame.grid_columnconfigure(0, weight=1)
+
+
+car1_card = cars_frame.winfo_children()[0]
+
+car1_card.grid(
+    row=0,
+    column=0,
+    padx=10
+)
+
+
+car2 = create_car_card(
+    cars_frame,
+    "🚗 CAR 2"
+)
+
+car2_card = cars_frame.winfo_children()[1]
+
+car2_card.grid(
+    row=0,
+    column=1,
+    padx=10
+)
+
+
+# =========================================================
+# RESULTS AREA
+# =========================================================
+
+results_title = tk.Label(
+    window,
+    text="PERFORMANCE COMPARISON",
+    font=("Arial", 15, "bold"),
+    bg=BG,
+    fg=SECONDARY
+)
+
+results_title.pack(pady=(20, 10))
+
+
+results_frame = tk.Frame(
+    window,
+    bg=CARD
+)
+
+results_frame.pack(
+    padx=25,
+    fill="x"
+)
+
+
+# =========================================================
+# RESULT LABELS
+# =========================================================
+
+result_labels = {}
+
+
+def create_result_row(name, row):
+
+    metric = tk.Label(
+        results_frame,
+        text=name,
+        font=("Arial", 11, "bold"),
+        bg=CARD,
+        fg=SECONDARY,
+        width=22
+    )
+
+    metric.grid(
+        row=row,
+        column=0,
+        pady=7
+    )
+
+    car1_result = tk.Label(
+        results_frame,
+        text="--",
+        font=("Arial", 12, "bold"),
+        bg=CARD,
+        fg=BLUE,
+        width=22
+    )
+
+    car1_result.grid(
+        row=row,
+        column=1
+    )
+
+    car2_result = tk.Label(
+        results_frame,
+        text="--",
+        font=("Arial", 12, "bold"),
+        bg=CARD,
+        fg=ACCENT,
+        width=22
+    )
+
+    car2_result.grid(
+        row=row,
+        column=2
+    )
+
+    result_labels[name] = (
+        car1_result,
+        car2_result
+    )
+
+
+create_result_row(
+    "Power",
+    0
+)
+
+create_result_row(
+    "Power / Weight",
+    1
+)
+
+create_result_row(
+    "Estimated 0–100",
+    2
+)
+
+create_result_row(
+    "Top Speed",
+    3
+)
+
+
+# =========================================================
+# WINNER
+# =========================================================
+
+winner_label = tk.Label(
+    window,
+    text="🏆 ENTER TWO CARS TO COMPARE",
+    font=("Arial", 18, "bold"),
+    bg=BG,
+    fg=GREEN
+)
+
+winner_label.pack(
+    pady=15
+)
+
+
+# =========================================================
+# CALCULATE
+# =========================================================
+
+def calculate():
+
+    try:
+
+        # ---------------------------------------------
+        # CAR 1
+        # ---------------------------------------------
+
+        name1 = car1["Car Name"].get()
+
+        hp1 = float(
+            car1["Horsepower (HP)"].get()
+        )
+
+        weight1 = float(
+            car1["Weight (kg)"].get()
+        )
+
+        speed1 = float(
+            car1["Top Speed (km/h)"].get()
+        )
+
+
+        # ---------------------------------------------
+        # CAR 2
+        # ---------------------------------------------
+
+        name2 = car2["Car Name"].get()
+
+        hp2 = float(
+            car2["Horsepower (HP)"].get()
+        )
+
+        weight2 = float(
+            car2["Weight (kg)"].get()
+        )
+
+        speed2 = float(
+            car2["Top Speed (km/h)"].get()
+        )
+
+
+        if (
+            hp1 <= 0
+            or weight1 <= 0
+            or speed1 <= 0
+            or hp2 <= 0
+            or weight2 <= 0
+            or speed2 <= 0
+        ):
+            raise ValueError
+
+
+        # =================================================
+        # CALCULATIONS
+        # =================================================
+
+        # Power in kW
+
+        kw1 = hp1 * 0.7457
+        kw2 = hp2 * 0.7457
+
+
+        # HP per ton
+
+        pwt1 = hp1 / (weight1 / 1000)
+        pwt2 = hp2 / (weight2 / 1000)
+
+
+        # Estimated 0-100
+
+        zero100_1 = 0.65 * math.sqrt(
+            weight1 / hp1
+        )
+
+        zero100_2 = 0.65 * math.sqrt(
+            weight2 / hp2
+        )
+
+
+        # =================================================
+        # DISPLAY
+        # =================================================
+
+        result_labels["Power"][0].config(
+            text=f"{kw1:.1f} kW"
+        )
+
+        result_labels["Power"][1].config(
+            text=f"{kw2:.1f} kW"
+        )
+
+
+        result_labels["Power / Weight"][0].config(
+            text=f"{pwt1:.1f} HP / ton"
+        )
+
+        result_labels["Power / Weight"][1].config(
+            text=f"{pwt2:.1f} HP / ton"
+        )
+
+
+        result_labels["Estimated 0–100"][0].config(
+            text=f"{zero100_1:.2f} sec"
+        )
+
+        result_labels["Estimated 0–100"][1].config(
+            text=f"{zero100_2:.2f} sec"
+        )
+
+
+        result_labels["Top Speed"][0].config(
+            text=f"{speed1:.0f} km/h"
+        )
+
+        result_labels["Top Speed"][1].config(
+            text=f"{speed2:.0f} km/h"
+        )
+
+
+        # =================================================
+        # WINNER
+        # =================================================
+
+        if pwt1 > pwt2:
+
+            winner_label.config(
+                text=f"🏆 {name1} WINS ON POWER-TO-WEIGHT",
+                fg=BLUE
+            )
+
+        elif pwt2 > pwt1:
+
+            winner_label.config(
+                text=f"🏆 {name2} WINS ON POWER-TO-WEIGHT",
+                fg=ACCENT
+            )
+
+        else:
+
+            winner_label.config(
+                text="🤝 BOTH CARS HAVE THE SAME POWER-TO-WEIGHT",
+                fg=GREEN
+            )
+
+
+    except ValueError:
+
+        messagebox.showerror(
+            "Invalid Input",
+            "Please enter valid positive numbers."
+        )
+
+
+# =========================================================
+# COMPARE BUTTON
+# =========================================================
+
+compare_button = tk.Button(
+    window,
+    text="⚡ COMPARE CARS",
+    command=calculate,
+    font=("Arial", 15, "bold"),
+    bg=GREEN,
+    fg="black",
+    activebackground="#45E088",
+    activeforeground="black",
+    bd=0,
+    width=28,
+    height=2,
+    cursor="hand2"
+)
+
+compare_button.pack(
+    pady=10
+)
+
+
+# =========================================================
+# FOOTNOTE
+# =========================================================
+
+info = tk.Label(
+    window,
+    text=(
+        "⚠️ 0–100 is a simplified estimate for learning.\n"
+        "Actual acceleration depends on traction, gearing, tires, drivetrain,\n"
+        "aerodynamics, launch control and road conditions."
+    ),
+    font=("Arial", 9),
+    bg=BG,
+    fg=SECONDARY,
+    justify="center"
+)
+
+info.pack(
+    pady=8
+)
+
+
+# =========================================================
+# START
+# =========================================================
+
+window.mainloop()
