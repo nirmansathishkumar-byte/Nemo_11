@@ -1,0 +1,701 @@
+import tkinter as tk
+import random
+import math
+import wave
+import struct
+import tempfile
+import subprocess
+import os
+
+
+# =========================================================
+# COLORS
+# =========================================================
+
+BG = "#101217"
+CARD = "#1B1F27"
+WHITE = "#FFFFFF"
+SECONDARY = "#AEB5C2"
+
+GREEN = "#2ECC71"
+RED = "#FF453A"
+BLUE = "#3498DB"
+
+
+# =========================================================
+# MUSICAL NOTES
+# =========================================================
+
+NOTES = [
+    "C",
+    "D",
+    "E",
+    "F",
+    "G",
+    "A",
+    "B"
+]
+
+
+# =========================================================
+# NOTE FREQUENCIES
+# =========================================================
+
+FREQUENCIES = {
+    "C": 261.63,
+    "D": 293.66,
+    "E": 329.63,
+    "F": 349.23,
+    "G": 392.00,
+    "A": 440.00,
+    "B": 493.88
+}
+
+
+# =========================================================
+# COMPUTER KEYBOARD MAPPING
+# =========================================================
+#
+# C = A
+# D = S
+# E = D
+# F = F
+# G = G
+# A = H
+# B = J
+#
+# =========================================================
+
+KEY_MAP = {
+    "a": "C",
+    "s": "D",
+    "d": "E",
+    "f": "F",
+    "g": "G",
+    "h": "A",
+    "j": "B"
+}
+
+
+# =========================================================
+# CREATE NOTE SOUND
+# =========================================================
+
+def create_note_sound(frequency):
+
+    sample_rate = 44100
+
+    duration = 0.5
+
+    number_of_samples = int(
+        sample_rate * duration
+    )
+
+    audio = bytearray()
+
+    for i in range(number_of_samples):
+
+        time = i / sample_rate
+
+        # Main note
+        main_tone = math.sin(
+            2 * math.pi * frequency * time
+        )
+
+        # Harmonic for a slightly nicer sound
+        harmonic = 0.25 * math.sin(
+            2 * math.pi * frequency * 2 * time
+        )
+
+        value = (
+            main_tone + harmonic
+        ) * 0.35
+
+        # Fade the sound out
+        fade = 1 - (
+            i / number_of_samples
+        )
+
+        value *= fade
+
+        sample = int(
+            value * 32767
+        )
+
+        audio.extend(
+            struct.pack(
+                "<h",
+                sample
+            )
+        )
+
+    temp_file = tempfile.NamedTemporaryFile(
+        suffix=".wav",
+        delete=False
+    )
+
+    filename = temp_file.name
+
+    temp_file.close()
+
+    with wave.open(
+        filename,
+        "wb"
+    ) as sound:
+
+        sound.setnchannels(1)
+
+        sound.setsampwidth(2)
+
+        sound.setframerate(
+            sample_rate
+        )
+
+        sound.writeframes(
+            audio
+        )
+
+    return filename
+
+
+# =========================================================
+# CREATE ALL NOTE SOUNDS
+# =========================================================
+
+NOTE_SOUNDS = {}
+
+for note in NOTES:
+
+    NOTE_SOUNDS[note] = create_note_sound(
+        FREQUENCIES[note]
+    )
+
+
+# =========================================================
+# PLAY NOTE
+# =========================================================
+
+def play_note(note):
+
+    filename = NOTE_SOUNDS[note]
+
+    try:
+
+        subprocess.Popen(
+            [
+                "afplay",
+                filename
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+
+    except Exception as error:
+
+        print(
+            "Audio error:",
+            error
+        )
+
+
+# =========================================================
+# MAIN WINDOW
+# =========================================================
+
+window = tk.Tk()
+
+window.title(
+    "Keyboard Trainer"
+)
+
+window.geometry(
+    "700x720"
+)
+
+window.resizable(
+    False,
+    False
+)
+
+window.configure(
+    bg=BG
+)
+
+
+# =========================================================
+# GAME VARIABLES
+# =========================================================
+
+score = 0
+
+attempts = 0
+
+current_note = ""
+
+
+# =========================================================
+# TITLE
+# =========================================================
+
+tk.Label(
+    window,
+    text="🎹 KEYBOARD TRAINER",
+    font=(
+        "Arial",
+        28,
+        "bold"
+    ),
+    bg=BG,
+    fg=WHITE
+).pack(
+    pady=(25, 5)
+)
+
+
+tk.Label(
+    window,
+    text="Train your musical note recognition",
+    font=(
+        "Arial",
+        12
+    ),
+    bg=BG,
+    fg=SECONDARY
+).pack(
+    pady=(0, 20)
+)
+
+
+# =========================================================
+# SCORE AREA
+# =========================================================
+
+score_frame = tk.Frame(
+    window,
+    bg=BG
+)
+
+score_frame.pack()
+
+
+score_label = tk.Label(
+    score_frame,
+    text="Score: 0 / 0",
+    font=(
+        "Arial",
+        15,
+        "bold"
+    ),
+    bg=BG,
+    fg=WHITE
+)
+
+score_label.grid(
+    row=0,
+    column=0,
+    padx=20
+)
+
+
+accuracy_label = tk.Label(
+    score_frame,
+    text="Accuracy: 0%",
+    font=(
+        "Arial",
+        15,
+        "bold"
+    ),
+    bg=BG,
+    fg=WHITE
+)
+
+accuracy_label.grid(
+    row=0,
+    column=1,
+    padx=20
+)
+
+
+# =========================================================
+# TARGET CARD
+# =========================================================
+
+target_card = tk.Frame(
+    window,
+    bg=CARD,
+    width=500,
+    height=220
+)
+
+target_card.pack(
+    pady=25
+)
+
+target_card.pack_propagate(
+    False
+)
+
+
+tk.Label(
+    target_card,
+    text="PLAY THIS NOTE",
+    font=(
+        "Arial",
+        13,
+        "bold"
+    ),
+    bg=CARD,
+    fg=SECONDARY
+).pack(
+    pady=(20, 0)
+)
+
+
+target_label = tk.Label(
+    target_card,
+    text="C",
+    font=(
+        "Arial",
+        85,
+        "bold"
+    ),
+    bg=CARD,
+    fg=BLUE
+)
+
+target_label.pack(
+    pady=5
+)
+
+
+# =========================================================
+# RESULT MESSAGE
+# =========================================================
+
+result_label = tk.Label(
+    window,
+    text="Press the correct key!",
+    font=(
+        "Arial",
+        17,
+        "bold"
+    ),
+    bg=BG,
+    fg=SECONDARY
+)
+
+result_label.pack(
+    pady=5
+)
+
+
+# =========================================================
+# UPDATE SCORE
+# =========================================================
+
+def update_score():
+
+    score_label.config(
+        text=f"Score: {score} / {attempts}"
+    )
+
+    if attempts > 0:
+
+        accuracy = (
+            score / attempts
+        ) * 100
+
+        accuracy_label.config(
+            text=f"Accuracy: {accuracy:.0f}%"
+        )
+
+    else:
+
+        accuracy_label.config(
+            text="Accuracy: 0%"
+        )
+
+
+# =========================================================
+# NEW NOTE
+# =========================================================
+
+def new_note():
+
+    global current_note
+
+    current_note = random.choice(
+        NOTES
+    )
+
+    target_label.config(
+        text=current_note
+    )
+
+    result_label.config(
+        text="Listen and play the note!",
+        fg=SECONDARY
+    )
+
+    # Play the target note
+    play_note(
+        current_note
+    )
+
+
+# =========================================================
+# CHECK KEY
+# =========================================================
+
+def check_key(event):
+
+    global score
+    global attempts
+
+    key = event.keysym.lower()
+
+    # Ignore other keyboard keys
+    if key not in KEY_MAP:
+        return
+
+    played_note = KEY_MAP[key]
+
+    attempts += 1
+
+    # -----------------------------------------------------
+    # CORRECT ANSWER
+    # -----------------------------------------------------
+
+    if played_note == current_note:
+
+        score += 1
+
+        result_label.config(
+            text="✅ CORRECT!",
+            fg=GREEN
+        )
+
+        play_note(
+            played_note
+        )
+
+        update_score()
+
+        # Show a new note after 0.7 seconds
+        window.after(
+            700,
+            new_note
+        )
+
+    # -----------------------------------------------------
+    # WRONG ANSWER
+    # -----------------------------------------------------
+
+    else:
+
+        result_label.config(
+            text=f"❌ You played {played_note}",
+            fg=RED
+        )
+
+        play_note(
+            played_note
+        )
+
+        update_score()
+
+
+# =========================================================
+# KEYBOARD DISPLAY
+# =========================================================
+
+keyboard_frame = tk.Frame(
+    window,
+    bg=BG
+)
+
+keyboard_frame.pack(
+    pady=15
+)
+
+
+for key, note in KEY_MAP.items():
+
+    button = tk.Button(
+        keyboard_frame,
+        text=f"{key.upper()}\n{note}",
+        font=(
+            "Arial",
+            14,
+            "bold"
+        ),
+        width=6,
+        height=3,
+        bg=WHITE,
+        fg="black",
+        activebackground=BLUE,
+        activeforeground=WHITE,
+        bd=0,
+        cursor="hand2"
+    )
+
+    button.pack(
+        side="left",
+        padx=4
+    )
+
+    # Clicking a button plays that note
+    button.config(
+        command=lambda n=note: play_note(n)
+    )
+
+
+# =========================================================
+# KEYBOARD INSTRUCTIONS
+# =========================================================
+
+tk.Label(
+    window,
+    text="COMPUTER KEYBOARD",
+    font=(
+        "Arial",
+        12,
+        "bold"
+    ),
+    bg=BG,
+    fg=WHITE
+).pack(
+    pady=(15, 5)
+)
+
+
+tk.Label(
+    window,
+    text=(
+        "A = C     S = D     D = E     F = F\n"
+        "G = G     H = A     J = B"
+    ),
+    font=(
+        "Arial",
+        11
+    ),
+    bg=BG,
+    fg=SECONDARY,
+    justify="center"
+).pack()
+
+
+# =========================================================
+# BUTTON AREA
+# =========================================================
+
+button_frame = tk.Frame(
+    window,
+    bg=BG
+)
+
+button_frame.pack(
+    pady=20
+)
+
+
+# =========================================================
+# NEW NOTE BUTTON
+# =========================================================
+
+tk.Button(
+    button_frame,
+    text="🎲 NEW NOTE",
+    command=new_note,
+    font=(
+        "Arial",
+        12,
+        "bold"
+    ),
+    bg=GREEN,
+    fg="black",
+    activebackground="#45E088",
+    bd=0,
+    width=18,
+    height=2,
+    cursor="hand2"
+).grid(
+    row=0,
+    column=0,
+    padx=5
+)
+
+
+# =========================================================
+# RESET BUTTON
+# =========================================================
+
+def reset_game():
+
+    global score
+    global attempts
+
+    score = 0
+
+    attempts = 0
+
+    update_score()
+
+    new_note()
+
+
+tk.Button(
+    button_frame,
+    text="🔄 RESET",
+    command=reset_game,
+    font=(
+        "Arial",
+        12,
+        "bold"
+    ),
+    bg=CARD,
+    fg=WHITE,
+    activebackground=BLUE,
+    bd=0,
+    width=18,
+    height=2,
+    cursor="hand2"
+).grid(
+    row=0,
+    column=1,
+    padx=5
+)
+
+
+# =========================================================
+# KEYBOARD EVENT
+# =========================================================
+
+window.bind(
+    "<KeyPress>",
+    check_key
+)
+
+
+# =========================================================
+# START GAME
+# =========================================================
+
+new_note()
+
+window.mainloop()
+
+
+# =========================================================
+# DELETE TEMPORARY SOUND FILES
+# =========================================================
+
+for filename in NOTE_SOUNDS.values():
+
+    try:
+
+        os.remove(filename)
+
+    except:
+
+        pass
