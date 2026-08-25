@@ -1,0 +1,657 @@
+import tkinter as tk
+import math
+
+
+# =========================================================
+# COLORS
+# =========================================================
+
+BG = "#F3F5F9"
+DISPLAY_BG = "#ABADB1"
+NUMBER_BG = "#252932"
+NUMBER_HOVER = "#303540"
+OPERATOR_BG = "#FF9500"
+OPERATOR_HOVER = "#FFAD33"
+SPECIAL_BG = "#3A3F4B"
+SPECIAL_HOVER = "#4A5160"
+EQUALS_BG = "#2ECC71"
+EQUALS_HOVER = "#45E088"
+TEXT = "#322424"
+SECONDARY_TEXT = "#0D131E"
+
+
+# =========================================================
+# MAIN WINDOW
+# =========================================================
+
+window = tk.Tk()
+
+window.title("Smart Calculator")
+window.geometry("430x720")
+window.resizable(False, False)
+window.configure(bg=BG)
+
+
+# =========================================================
+# CALCULATOR STATE
+# =========================================================
+
+expression = ""
+
+
+# =========================================================
+# FUNCTIONS
+# =========================================================
+
+def update_display():
+    display.delete(0, tk.END)
+
+    if expression:
+        display.insert(0, expression)
+    else:
+        display.insert(0, "0")
+
+
+def add_value(value):
+    global expression
+
+    expression += value
+    update_display()
+
+
+def clear():
+    global expression
+
+    expression = ""
+    update_display()
+
+
+def backspace():
+    global expression
+
+    expression = expression[:-1]
+    update_display()
+
+
+def calculate():
+    global expression
+
+    if not expression:
+        return
+
+    try:
+        calculation = expression
+
+        calculation = calculation.replace("×", "*")
+        calculation = calculation.replace("÷", "/")
+        calculation = calculation.replace("π", str(math.pi))
+
+        # Percentage
+        calculation = calculation.replace("%", "/100")
+
+        allowed = "0123456789+-*/(). "
+
+        if not all(char in allowed for char in calculation):
+            raise ValueError
+
+        result = eval(
+            calculation,
+            {"__builtins__": None},
+            {}
+        )
+
+        # Make integers look cleaner
+        if isinstance(result, float) and result.is_integer():
+            result = int(result)
+
+        history.insert(
+            0,
+            f"{expression} = {result}"
+        )
+
+        expression = str(result)
+        update_display()
+
+    except:
+        display.delete(0, tk.END)
+        display.insert(0, "Error")
+
+        expression = ""
+
+
+def square():
+    global expression
+
+    try:
+        number = float(expression)
+
+        result = number ** 2
+
+        if result.is_integer():
+            result = int(result)
+
+        history.insert(
+            0,
+            f"{number}² = {result}"
+        )
+
+        expression = str(result)
+        update_display()
+
+    except:
+        show_error()
+
+
+def square_root():
+    global expression
+
+    try:
+        number = float(expression)
+
+        if number < 0:
+            raise ValueError
+
+        result = math.sqrt(number)
+
+        if result.is_integer():
+            result = int(result)
+
+        history.insert(
+            0,
+            f"√{number} = {result}"
+        )
+
+        expression = str(result)
+        update_display()
+
+    except:
+        show_error()
+
+
+def scientific(function_name):
+    global expression
+
+    try:
+        number = float(expression)
+
+        if function_name == "sin":
+            result = math.sin(math.radians(number))
+
+        elif function_name == "cos":
+            result = math.cos(math.radians(number))
+
+        elif function_name == "tan":
+            result = math.tan(math.radians(number))
+
+        elif function_name == "log":
+            if number <= 0:
+                raise ValueError
+
+            result = math.log10(number)
+
+        if abs(result) < 0.0000001:
+            result = 0
+
+        expression = str(result)
+
+        history.insert(
+            0,
+            f"{function_name}({number}) = {result}"
+        )
+
+        update_display()
+
+    except:
+        show_error()
+
+
+def show_error():
+    global expression
+
+    display.delete(0, tk.END)
+    display.insert(0, "Error")
+
+    expression = ""
+
+
+def clear_history():
+    history.delete(0, tk.END)
+
+
+# =========================================================
+# HOVER EFFECT
+# =========================================================
+
+def hover(button, normal, hover_color):
+    button.bind(
+        "<Enter>",
+        lambda event: button.config(bg=hover_color)
+    )
+
+    button.bind(
+        "<Leave>",
+        lambda event: button.config(bg=normal)
+    )
+
+
+# =========================================================
+# TITLE
+# =========================================================
+
+title = tk.Label(
+    window,
+    text="SMART CALCULATOR",
+    font=("Arial", 17, "bold"),
+    bg=BG,
+    fg=TEXT
+)
+
+title.pack(pady=(20, 5))
+
+
+subtitle = tk.Label(
+    window,
+    text="Scientific Calculator",
+    font=("Arial", 10),
+    bg=BG,
+    fg=SECONDARY_TEXT
+)
+
+subtitle.pack(pady=(0, 15))
+
+
+# =========================================================
+# DISPLAY
+# =========================================================
+
+display_frame = tk.Frame(
+    window,
+    bg=DISPLAY_BG
+)
+
+display_frame.pack(
+    padx=20,
+    fill="x"
+)
+
+
+display = tk.Entry(
+    display_frame,
+    font=("Arial", 32, "bold"),
+    bg=DISPLAY_BG,
+    fg=TEXT,
+    insertbackground=TEXT,
+    bd=0,
+    justify="right"
+)
+
+display.pack(
+    padx=15,
+    pady=22,
+    fill="x"
+)
+
+display.insert(0, "0")
+
+
+# =========================================================
+# BUTTON FRAME
+# =========================================================
+
+button_frame = tk.Frame(
+    window,
+    bg=BG
+)
+
+button_frame.pack(
+    padx=20,
+    pady=15
+)
+
+
+# =========================================================
+# BUTTON CREATOR
+# =========================================================
+
+def create_button(
+    text,
+    row,
+    column,
+    command,
+    bg_color=NUMBER_BG,
+    hover_color=NUMBER_HOVER,
+    width=5
+):
+
+    button = tk.Button(
+        button_frame,
+        text=text,
+        command=command,
+        font=("Arial", 15, "bold"),
+        width=width,
+        height=2,
+        bg=bg_color,
+        fg=TEXT,
+        activebackground=hover_color,
+        activeforeground=TEXT,
+        bd=0,
+        relief="flat",
+        cursor="hand2"
+    )
+
+    button.grid(
+        row=row,
+        column=column,
+        padx=4,
+        pady=4
+    )
+
+    hover(
+        button,
+        bg_color,
+        hover_color
+    )
+
+    return button
+
+
+# =========================================================
+# SCIENTIFIC BUTTONS
+# =========================================================
+
+create_button(
+    "sin",
+    0,
+    0,
+    lambda: scientific("sin"),
+    SPECIAL_BG,
+    SPECIAL_HOVER
+)
+
+create_button(
+    "cos",
+    0,
+    1,
+    lambda: scientific("cos"),
+    SPECIAL_BG,
+    SPECIAL_HOVER
+)
+
+create_button(
+    "tan",
+    0,
+    2,
+    lambda: scientific("tan"),
+    SPECIAL_BG,
+    SPECIAL_HOVER
+)
+
+create_button(
+    "log",
+    0,
+    3,
+    lambda: scientific("log"),
+    SPECIAL_BG,
+    SPECIAL_HOVER
+)
+
+
+# =========================================================
+# SECOND ROW
+# =========================================================
+
+create_button(
+    "√",
+    1,
+    0,
+    square_root,
+    SPECIAL_BG,
+    SPECIAL_HOVER
+)
+
+create_button(
+    "x²",
+    1,
+    1,
+    square,
+    SPECIAL_BG,
+    SPECIAL_HOVER
+)
+
+create_button(
+    "π",
+    1,
+    2,
+    lambda: add_value("π"),
+    SPECIAL_BG,
+    SPECIAL_HOVER
+)
+
+create_button(
+    "%",
+    1,
+    3,
+    lambda: add_value("%"),
+    SPECIAL_BG,
+    SPECIAL_HOVER
+)
+
+
+# =========================================================
+# NUMBER BUTTONS
+# =========================================================
+
+create_button("7", 2, 0, lambda: add_value("7"))
+
+create_button("8", 2, 1, lambda: add_value("8"))
+
+create_button("9", 2, 2, lambda: add_value("9"))
+
+create_button(
+    "÷",
+    2,
+    3,
+    lambda: add_value("÷"),
+    OPERATOR_BG,
+    OPERATOR_HOVER
+)
+
+
+create_button("4", 3, 0, lambda: add_value("4"))
+
+create_button("5", 3, 1, lambda: add_value("5"))
+
+create_button("6", 3, 2, lambda: add_value("6"))
+
+create_button(
+    "×",
+    3,
+    3,
+    lambda: add_value("×"),
+    OPERATOR_BG,
+    OPERATOR_HOVER
+)
+
+
+create_button("1", 4, 0, lambda: add_value("1"))
+
+create_button("2", 4, 1, lambda: add_value("2"))
+
+create_button("3", 4, 2, lambda: add_value("3"))
+
+create_button(
+    "-",
+    4,
+    3,
+    lambda: add_value("-"),
+    OPERATOR_BG,
+    OPERATOR_HOVER
+)
+
+
+create_button("0", 5, 0, lambda: add_value("0"))
+
+create_button(".", 5, 1, lambda: add_value("."))
+
+create_button(
+    "⌫",
+    5,
+    2,
+    backspace,
+    SPECIAL_BG,
+    SPECIAL_HOVER
+)
+
+create_button(
+    "+",
+    5,
+    3,
+    lambda: add_value("+"),
+    OPERATOR_BG,
+    OPERATOR_HOVER
+)
+
+
+# =========================================================
+# CLEAR BUTTON
+# =========================================================
+
+create_button(
+    "CLEAR",
+    6,
+    0,
+    clear,
+    SPECIAL_BG,
+    SPECIAL_HOVER,
+    width=5
+)
+
+
+# =========================================================
+# EQUALS BUTTON
+# =========================================================
+
+equals_button = tk.Button(
+    button_frame,
+    text="=",
+    command=calculate,
+    font=("Arial", 18, "bold"),
+    width=15,
+    height=2,
+    bg=EQUALS_BG,
+    fg=TEXT,
+    activebackground=EQUALS_HOVER,
+    activeforeground=TEXT,
+    bd=0,
+    relief="flat",
+    cursor="hand2"
+)
+
+equals_button.grid(
+    row=6,
+    column=1,
+    columnspan=3,
+    padx=4,
+    pady=4
+)
+
+hover(
+    equals_button,
+    EQUALS_BG,
+    EQUALS_HOVER
+)
+
+
+# =========================================================
+# HISTORY
+# =========================================================
+
+history_title = tk.Label(
+    window,
+    text="RECENT CALCULATIONS",
+    font=("Arial", 10, "bold"),
+    bg=BG,
+    fg=SECONDARY_TEXT
+)
+
+history_title.pack(
+    pady=(8, 5)
+)
+
+
+history = tk.Listbox(
+    window,
+    height=4,
+    width=48,
+    font=("Arial", 10),
+    bg=DISPLAY_BG,
+    fg=TEXT,
+    selectbackground=SPECIAL_BG,
+    selectforeground=TEXT,
+    bd=0,
+    highlightthickness=0
+)
+
+history.pack(
+    padx=20,
+    fill="x"
+)
+
+
+clear_history_button = tk.Button(
+    window,
+    text="Clear History",
+    command=clear_history,
+    font=("Arial", 9),
+    bg=BG,
+    fg=SECONDARY_TEXT,
+    activebackground=BG,
+    activeforeground=TEXT,
+    bd=0,
+    cursor="hand2"
+)
+
+clear_history_button.pack(
+    pady=5
+)
+
+
+# =========================================================
+# KEYBOARD SUPPORT
+# =========================================================
+
+def keyboard_input(event):
+
+    global expression
+
+    key = event.keysym
+
+    if event.char in "0123456789+-*/().":
+
+        add_value(event.char)
+
+    elif event.char == "%":
+
+        add_value("%")
+
+    elif key == "Return":
+
+        calculate()
+
+    elif key == "BackSpace":
+
+        backspace()
+
+    elif key == "Escape":
+
+        clear()
+
+
+window.bind("<Key>", keyboard_input)
+
+
+# =========================================================
+# START
+# =========================================================
+
+window.mainloop()
