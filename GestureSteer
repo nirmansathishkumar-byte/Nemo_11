@@ -1,0 +1,758 @@
+import cv2
+import mediapipe as mp
+import math
+import time
+from pynput.keyboard import Controller
+
+
+# ============================================================
+# GESTURE CONTROLLED STEERING WHEEL
+# ============================================================
+
+print("=" * 55)
+print("       GESTURE CONTROLLED STEERING")
+print("=" * 55)
+print()
+print("Starting...")
+print()
+
+
+# ============================================================
+# SETTINGS
+# ============================================================
+
+CAMERA_NUMBER = 0
+
+FRAME_WIDTH = 1280
+FRAME_HEIGHT = 720
+
+# Steering sensitivity
+STEERING_DEADZONE = 45
+
+# How much the hands need to move
+STEERING_RANGE = 220
+
+# Keyboard controls
+LEFT_KEY = "a"
+RIGHT_KEY = "d"
+ACCELERATE_KEY = "w"
+BRAKE_KEY = "s"
+
+# Model file
+MODEL_PATH = "hand_landmarker.task"
+
+
+# ============================================================
+# KEYBOARD CONTROLLER
+# ============================================================
+
+keyboard = Controller()
+
+left_pressed = False
+right_pressed = False
+accelerate_pressed = False
+brake_pressed = False
+
+
+def press_key(key):
+    """Press a key only if it isn't already pressed."""
+    global left_pressed
+    global right_pressed
+    global accelerate_pressed
+    global brake_pressed
+
+    if key == LEFT_KEY and not left_pressed:
+        keyboard.press(key)
+        left_pressed = True
+
+    elif key == RIGHT_KEY and not right_pressed:
+        keyboard.press(key)
+        right_pressed = True
+
+    elif key == ACCELERATE_KEY and not accelerate_pressed:
+        keyboard.press(key)
+        accelerate_pressed = True
+
+    elif key == BRAKE_KEY and not brake_pressed:
+        keyboard.press(key)
+        brake_pressed = True
+
+
+def release_key(key):
+    """Release a key if it is currently pressed."""
+    global left_pressed
+    global right_pressed
+    global accelerate_pressed
+    global brake_pressed
+
+    if key == LEFT_KEY and left_pressed:
+        keyboard.release(key)
+        left_pressed = False
+
+    elif key == RIGHT_KEY and right_pressed:
+        keyboard.release(key)
+        right_pressed = False
+
+    elif key == ACCELERATE_KEY and accelerate_pressed:
+        keyboard.release(key)
+        accelerate_pressed = False
+
+    elif key == BRAKE_KEY and brake_pressed:
+        keyboard.release(key)
+        brake_pressed = False
+
+
+def release_all_keys():
+    """Release every game-control key."""
+    release_key(LEFT_KEY)
+    release_key(RIGHT_KEY)
+    release_key(ACCELERATE_KEY)
+    release_key(BRAKE_KEY)
+
+
+# ============================================================
+# MEDIAPIPE
+# ============================================================
+
+print("Loading MediaPipe...")
+
+BaseOptions = mp.tasks.BaseOptions
+VisionRunningMode = mp.tasks.vision.RunningMode
+HandLandmarker = mp.tasks.vision.HandLandmarker
+HandLandmarkerOptions = mp.tasks.vision.HandLandmarkerOptions
+
+
+options = HandLandmarkerOptions(
+    base_options=BaseOptions(
+        model_asset_path=MODEL_PATH
+    ),
+
+    running_mode=VisionRunningMode.IMAGE,
+
+    num_hands=2,
+
+    min_hand_detection_confidence=0.5,
+
+    min_hand_presence_confidence=0.5,
+
+    min_tracking_confidence=0.5
+)
+
+
+try:
+    hands = HandLandmarker.create_from_options(options)
+except Exception as e:
+    print()
+    print("ERROR: Could not load MediaPipe.")
+    print(e)
+    print()
+    print("Make sure hand_landmarker.task is in the same folder.")
+    input("Press ENTER to close...")
+    raise SystemExit
+
+
+print("MediaPipe loaded successfully!")
+
+
+# ============================================================
+# CAMERA
+# ============================================================
+
+print()
+print("Starting camera...")
+
+camera = cv2.VideoCapture(CAMERA_NUMBER)
+
+camera.set(
+    cv2.CAP_PROP_FRAME_WIDTH,
+    FRAME_WIDTH
+)
+
+camera.set(
+    cv2.CAP_PROP_FRAME_HEIGHT,
+    FRAME_HEIGHT
+)
+
+
+if not camera.isOpened():
+
+    print()
+    print("ERROR: Could not open the camera.")
+    print()
+    print("Try changing:")
+    print("CAMERA_NUMBER = 0")
+    print("to:")
+    print("CAMERA_NUMBER = 1")
+    print()
+
+    hands.close()
+    input("Press ENTER to close...")
+    raise SystemExit
+
+
+print("Camera opened successfully!")
+print()
+print("==============================================")
+print("           CONTROLS")
+print("==============================================")
+print()
+print("Put BOTH hands in front of the camera.")
+print()
+print("Move hands LEFT  -> A")
+print("Move hands RIGHT -> D")
+print()
+print("Hands higher     -> W (accelerate)")
+print("Hands lower      -> S (brake)")
+print()
+print("Press Q to quit.")
+print()
+print("==============================================")
+
+
+# ============================================================
+# HELPER FUNCTIONS
+# ============================================================
+
+def landmark_position(landmark, width, height):
+    """Convert MediaPipe coordinates into screen coordinates."""
+
+    x = int(landmark.x * width)
+    y = int(landmark.y * height)
+
+    return x, y
+
+
+def calculate_hand_center(hand_landmarks, width, height):
+    """Calculate the center of one hand."""
+
+    points = []
+
+    for landmark in hand_landmarks:
+
+        x, y = landmark_position(
+            landmark,
+            width,
+            height
+        )
+
+        points.append((x, y))
+
+    if not points:
+        return None
+
+    center_x = sum(p[0] for p in points) // len(points)
+    center_y = sum(p[1] for p in points) // len(points)
+
+    return center_x, center_y
+
+
+def calculate_distance(point1, point2):
+
+    return math.sqrt(
+        (point1[0] - point2[0]) ** 2
+        +
+        (point1[1] - point2[1]) ** 2
+    )
+
+
+# ============================================================
+# VARIABLES
+# ============================================================
+
+previous_center_x = FRAME_WIDTH // 2
+previous_center_y = FRAME_HEIGHT // 2
+
+steering = 0
+
+fps_time = time.time()
+fps = 0
+
+
+# ============================================================
+# MAIN LOOP
+# ============================================================
+
+try:
+
+    while True:
+
+        success, frame = camera.read()
+
+        if not success:
+
+            print("Could not read camera frame.")
+            break
+
+
+        # Flip image so it behaves like a mirror
+        frame = cv2.flip(frame, 1)
+
+        height, width = frame.shape[:2]
+
+
+        # ====================================================
+        # MEDIAPIPE IMAGE
+        # ====================================================
+
+        rgb = cv2.cvtColor(
+            frame,
+            cv2.COLOR_BGR2RGB
+        )
+
+        mp_image = mp.Image(
+            image_format=mp.ImageFormat.SRGB,
+            data=rgb
+        )
+
+
+        # Detect hands
+        results = hands.detect(mp_image)
+
+
+        # ====================================================
+        # DEFAULT STATE
+        # ====================================================
+
+        current_center_x = previous_center_x
+        current_center_y = previous_center_y
+
+        number_of_hands = 0
+
+
+        # ====================================================
+        # HAND DETECTION
+        # ====================================================
+
+        if results.hand_landmarks:
+
+            number_of_hands = len(
+                results.hand_landmarks
+            )
+
+
+            centers = []
+
+
+            for hand_landmarks in results.hand_landmarks:
+
+                center = calculate_hand_center(
+                    hand_landmarks,
+                    width,
+                    height
+                )
+
+                if center is not None:
+
+                    centers.append(center)
+
+
+                # Draw hand landmarks
+                for landmark in hand_landmarks:
+
+                    x, y = landmark_position(
+                        landmark,
+                        width,
+                        height
+                    )
+
+                    cv2.circle(
+                        frame,
+                        (x, y),
+                        5,
+                        (0, 255, 0),
+                        -1
+                    )
+
+
+            # =================================================
+            # TWO-HAND STEERING
+            # =================================================
+
+            if len(centers) >= 2:
+
+                # Center between both hands
+
+                current_center_x = int(
+                    (centers[0][0] + centers[1][0]) / 2
+                )
+
+                current_center_y = int(
+                    (centers[0][1] + centers[1][1]) / 2
+                )
+
+
+                # Draw hand centers
+
+                for center in centers:
+
+                    cv2.circle(
+                        frame,
+                        center,
+                        12,
+                        (255, 0, 255),
+                        -1
+                    )
+
+
+                # Connect hands
+
+                cv2.line(
+                    frame,
+                    centers[0],
+                    centers[1],
+                    (255, 0, 255),
+                    3
+                )
+
+
+                # =================================================
+                # STEERING CALCULATION
+                # =================================================
+
+                screen_center = width // 2
+
+                steering = (
+                    current_center_x
+                    -
+                    screen_center
+                )
+
+
+                # LEFT
+                if steering < -STEERING_DEADZONE:
+
+                    press_key(LEFT_KEY)
+
+                    release_key(RIGHT_KEY)
+
+                    steering_text = "LEFT"
+                    steering_color = (0, 150, 255)
+
+
+                # RIGHT
+                elif steering > STEERING_DEADZONE:
+
+                    press_key(RIGHT_KEY)
+
+                    release_key(LEFT_KEY)
+
+                    steering_text = "RIGHT"
+                    steering_color = (0, 150, 255)
+
+
+                # CENTER
+                else:
+
+                    release_key(LEFT_KEY)
+                    release_key(RIGHT_KEY)
+
+                    steering_text = "CENTER"
+                    steering_color = (0, 255, 0)
+
+
+                # =================================================
+                # ACCELERATION / BRAKE
+                # =================================================
+
+                vertical_center = height // 2
+
+                vertical_difference = (
+                    current_center_y
+                    -
+                    vertical_center
+                )
+
+
+                # Hands above center
+                if vertical_difference < -80:
+
+                    press_key(ACCELERATE_KEY)
+
+                    release_key(BRAKE_KEY)
+
+                    speed_text = "ACCELERATE"
+
+
+                # Hands below center
+                elif vertical_difference > 100:
+
+                    press_key(BRAKE_KEY)
+
+                    release_key(ACCELERATE_KEY)
+
+                    speed_text = "BRAKE"
+
+
+                # Center
+                else:
+
+                    release_key(ACCELERATE_KEY)
+                    release_key(BRAKE_KEY)
+
+                    speed_text = "COAST"
+
+
+                previous_center_x = current_center_x
+                previous_center_y = current_center_y
+
+
+            # =================================================
+            # ONE HAND
+            # =================================================
+
+            elif len(centers) == 1:
+
+                current_center_x = centers[0][0]
+                current_center_y = centers[0][1]
+
+                release_key(LEFT_KEY)
+                release_key(RIGHT_KEY)
+
+                release_key(ACCELERATE_KEY)
+                release_key(BRAKE_KEY)
+
+                steering_text = "NEED 2 HANDS"
+                steering_color = (0, 200, 255)
+
+                speed_text = "COAST"
+
+
+            else:
+
+                release_all_keys()
+
+                steering_text = "NO HANDS"
+                steering_color = (0, 0, 255)
+
+                speed_text = "COAST"
+
+
+        else:
+
+            release_all_keys()
+
+            steering_text = "NO HANDS"
+            steering_color = (0, 0, 255)
+
+            speed_text = "COAST"
+
+
+        # ====================================================
+        # STEERING CENTER LINE
+        # ====================================================
+
+        cv2.line(
+            frame,
+            (width // 2, 0),
+            (width // 2, height),
+            (100, 100, 100),
+            2
+        )
+
+
+        # ====================================================
+        # STEERING POSITION
+        # ====================================================
+
+        cv2.circle(
+            frame,
+            (
+                int(current_center_x),
+                int(current_center_y)
+            ),
+            20,
+            (255, 0, 255),
+            3
+        )
+
+
+        # ====================================================
+        # TOP INFORMATION PANEL
+        # ====================================================
+
+        cv2.rectangle(
+            frame,
+            (20, 20),
+            (470, 185),
+            (20, 20, 20),
+            -1
+        )
+
+
+        cv2.putText(
+            frame,
+            "GESTURE STEERING",
+            (40, 55),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.9,
+            (255, 255, 255),
+            2
+        )
+
+
+        cv2.putText(
+            frame,
+            f"Hands: {number_of_hands}",
+            (40, 90),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.65,
+            (255, 255, 255),
+            2
+        )
+
+
+        cv2.putText(
+            frame,
+            f"Steering: {steering_text}",
+            (40, 125),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.65,
+            steering_color,
+            2
+        )
+
+
+        cv2.putText(
+            frame,
+            f"Speed: {speed_text}",
+            (40, 160),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.65,
+            (0, 255, 255),
+            2
+        )
+
+
+        # ====================================================
+        # STEERING BAR
+        # ====================================================
+
+        bar_y = height - 70
+
+        bar_left = 250
+        bar_right = width - 250
+
+        cv2.line(
+            frame,
+            (bar_left, bar_y),
+            (bar_right, bar_y),
+            (255, 255, 255),
+            6
+        )
+
+
+        cv2.line(
+            frame,
+            (width // 2, bar_y - 20),
+            (width // 2, bar_y + 20),
+            (0, 255, 0),
+            4
+        )
+
+
+        steering_x = int(
+            width // 2
+            +
+            max(
+                -300,
+                min(300, steering)
+            )
+        )
+
+
+        cv2.circle(
+            frame,
+            (steering_x, bar_y),
+            15,
+            steering_color,
+            -1
+        )
+
+
+        # ====================================================
+        # FPS
+        # ====================================================
+
+        current_time = time.time()
+
+        if current_time - fps_time >= 1:
+
+            fps = 1 / max(
+                0.001,
+                current_time - fps_time
+            )
+
+            fps_time = current_time
+
+
+        cv2.putText(
+            frame,
+            f"FPS: {int(fps)}",
+            (width - 150, 45),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (255, 255, 255),
+            2
+        )
+
+
+        # ====================================================
+        # INSTRUCTIONS
+        # ====================================================
+
+        cv2.putText(
+            frame,
+            "2 HANDS = STEERING",
+            (width - 330, height - 45),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            (255, 255, 255),
+            2
+        )
+
+
+        # ====================================================
+        # SHOW CAMERA
+        # ====================================================
+
+        cv2.imshow(
+            "Gesture Controlled Steering",
+            frame
+        )
+
+
+        # ====================================================
+        # QUIT
+        # ====================================================
+
+        key = cv2.waitKey(1) & 0xFF
+
+        if key == ord("q"):
+
+            break
+
+
+# ============================================================
+# CLEANUP
+# ============================================================
+
+except KeyboardInterrupt:
+
+    print()
+    print("Program stopped.")
+
+
+finally:
+
+    print()
+    print("Stopping gesture steering...")
+
+    release_all_keys()
+
+    camera.release()
+
+    cv2.destroyAllWindows()
+
+    hands.close()
+
+    print("Done!")
