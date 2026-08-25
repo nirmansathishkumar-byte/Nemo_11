@@ -1,0 +1,245 @@
+import tkinter as tk
+from tkinter import messagebox
+import requests
+
+
+def get_weather():
+    city = city_entry.get().strip()
+
+    if city == "":
+        messagebox.showwarning("Missing City", "Please enter a city.")
+        return
+
+    url = f"https://wttr.in/{city}?format=j1"
+
+    try:
+        response = requests.get(url, timeout=10)
+
+        if response.status_code != 200:
+            messagebox.showerror("Error", "Could not get weather information.")
+            return
+
+        data = response.json()
+
+        # Current weather
+        current = data["current_condition"][0]
+
+        temperature = current["temp_C"]
+        feels_like = current["FeelsLikeC"]
+        weather = current["weatherDesc"][0]["value"]
+        humidity = current["humidity"]
+        wind = current["windspeedKmph"]
+
+        # Sunrise and sunset
+        astronomy = data["weather"][0]["astronomy"][0]
+
+        sunrise = astronomy["sunrise"]
+        sunset = astronomy["sunset"]
+
+        # Update labels
+        city_label.config(text=city.title())
+
+        temperature_label.config(
+            text=f"{temperature}°C"
+        )
+
+        condition_label.config(
+            text=f"☁️ {weather}"
+        )
+
+        feels_label.config(
+            text=f"Feels like: {feels_like}°C"
+        )
+
+        humidity_label.config(
+            text=f"💧 Humidity: {humidity}%"
+        )
+
+        wind_label.config(
+            text=f"💨 Wind: {wind} km/h"
+        )
+
+        sunrise_label.config(
+            text=f"🌅 Sunrise: {sunrise}"
+        )
+
+        sunset_label.config(
+            text=f"🌇 Sunset: {sunset}"
+        )
+
+    except requests.exceptions.RequestException:
+        messagebox.showerror(
+            "Connection Error",
+            "Could not connect to the weather service."
+        )
+
+    except (KeyError, IndexError, ValueError):
+        messagebox.showerror(
+            "Error",
+            "Could not read the weather information."
+        )
+
+
+# -----------------------------
+# Create window
+# -----------------------------
+
+window = tk.Tk()
+
+window.title("Weather App")
+window.geometry("450x700")
+window.resizable(False, False)
+
+
+# -----------------------------
+# Title
+# -----------------------------
+
+title_label = tk.Label(
+    window,
+    text="🌦️ Weather App",
+    font=("Arial", 28, "bold")
+)
+
+title_label.pack(pady=20)
+
+
+# -----------------------------
+# City input
+# -----------------------------
+
+city_entry = tk.Entry(
+    window,
+    font=("Arial", 18),
+    justify="center",
+    width=20
+)
+
+city_entry.pack(pady=10)
+
+city_entry.insert(0, "Chennai")
+
+
+# -----------------------------
+# Search button
+# -----------------------------
+
+search_button = tk.Button(
+    window,
+    text="Search Weather",
+    font=("Arial", 16, "bold"),
+    command=get_weather
+)
+
+search_button.pack(pady=10)
+
+
+# -----------------------------
+# City
+# -----------------------------
+
+city_label = tk.Label(
+    window,
+    text="Chennai",
+    font=("Arial", 25, "bold")
+)
+
+city_label.pack(pady=15)
+
+
+# -----------------------------
+# Temperature
+# -----------------------------
+
+temperature_label = tk.Label(
+    window,
+    text="--°C",
+    font=("Arial", 50, "bold")
+)
+
+temperature_label.pack(pady=5)
+
+
+# -----------------------------
+# Condition
+# -----------------------------
+
+condition_label = tk.Label(
+    window,
+    text="☁️ Weather",
+    font=("Arial", 20)
+)
+
+condition_label.pack(pady=5)
+
+
+# -----------------------------
+# Feels like
+# -----------------------------
+
+feels_label = tk.Label(
+    window,
+    text="Feels like: --°C",
+    font=("Arial", 16)
+)
+
+feels_label.pack(pady=5)
+
+
+# -----------------------------
+# Humidity
+# -----------------------------
+
+humidity_label = tk.Label(
+    window,
+    text="💧 Humidity: --%",
+    font=("Arial", 16)
+)
+
+humidity_label.pack(pady=5)
+
+
+# -----------------------------
+# Wind
+# -----------------------------
+
+wind_label = tk.Label(
+    window,
+    text="💨 Wind: -- km/h",
+    font=("Arial", 16)
+)
+
+wind_label.pack(pady=5)
+
+
+# -----------------------------
+# Sunrise
+# -----------------------------
+
+sunrise_label = tk.Label(
+    window,
+    text="🌅 Sunrise: --",
+    font=("Arial", 16)
+)
+
+sunrise_label.pack(pady=8)
+
+
+# -----------------------------
+# Sunset
+# -----------------------------
+
+sunset_label = tk.Label(
+    window,
+    text="🌇 Sunset: --",
+    font=("Arial", 16)
+)
+
+sunset_label.pack(pady=8)
+
+
+# -----------------------------
+# Start app
+# -----------------------------
+
+window.mainloop()
