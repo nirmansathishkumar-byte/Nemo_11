@@ -1,0 +1,775 @@
+#Run with "streamlit run app.py"
+#ctrl + c to stop the server
+
+
+import streamlit as st
+import yfinance as yf
+import plotly.graph_objects as go
+import json
+import os
+
+
+# =========================================================
+# PAGE CONFIGURATION
+# =========================================================
+
+st.set_page_config(
+    page_title="StockIQ",
+    page_icon="📈",
+    layout="wide"
+)
+
+
+# =========================================================
+# WATCHLIST STORAGE
+# =========================================================
+
+WATCHLIST_FILE = "watchlists.json"
+
+
+def load_watchlists():
+
+    if os.path.exists(WATCHLIST_FILE):
+
+        try:
+            with open(WATCHLIST_FILE, "r") as file:
+                return json.load(file)
+
+        except Exception:
+            return {
+                "Favorites": []
+            }
+
+    return {
+        "Favorites": []
+    }
+
+
+def save_watchlists():
+
+    with open(WATCHLIST_FILE, "w") as file:
+
+        json.dump(
+            st.session_state.watchlists,
+            file,
+            indent=4
+        )
+
+
+# =========================================================
+# SESSION START
+# =========================================================
+
+if "watchlists" not in st.session_state:
+
+    st.session_state.watchlists = load_watchlists()
+
+
+# =========================================================
+# SIDEBAR
+# =========================================================
+
+st.sidebar.title("📈 StockIQ")
+
+st.sidebar.caption(
+    "Your personal stock market dashboard"
+)
+
+st.sidebar.divider()
+
+st.sidebar.subheader("📁 Watchlists")
+
+
+# =========================================================
+# CREATE WATCHLIST
+# =========================================================
+
+new_watchlist = st.sidebar.text_input(
+    "New watchlist",
+    placeholder="Example: Indian Stocks"
+)
+
+if st.sidebar.button(
+    "➕ Create Watchlist",
+    width="stretch"
+):
+
+    new_watchlist = new_watchlist.strip()
+
+    if not new_watchlist:
+
+        st.sidebar.warning(
+            "Enter a watchlist name."
+        )
+
+    elif new_watchlist in st.session_state.watchlists:
+
+        st.sidebar.warning(
+            "That watchlist already exists."
+        )
+
+    else:
+
+        st.session_state.watchlists[
+            new_watchlist
+        ] = []
+
+        save_watchlists()
+
+        st.sidebar.success(
+            f"Created {new_watchlist}"
+        )
+
+        st.rerun()
+
+
+# =========================================================
+# SELECT WATCHLIST
+# =========================================================
+
+watchlist_names = list(
+    st.session_state.watchlists.keys()
+)
+
+selected_watchlist = st.sidebar.selectbox(
+    "Select watchlist",
+    watchlist_names
+)
+
+
+# =========================================================
+# DELETE WATCHLIST
+# =========================================================
+
+if selected_watchlist != "Favorites":
+
+    if st.sidebar.button(
+        "🗑️ Delete Watchlist",
+        width="stretch"
+    ):
+
+        del st.session_state.watchlists[
+            selected_watchlist
+        ]
+
+        save_watchlists()
+
+        st.rerun()
+
+
+# =========================================================
+# MAIN HEADER
+# =========================================================
+
+st.title("📈 StockIQ")
+
+st.caption(
+    "Track stocks, analyze prices and manage your watchlists."
+)
+
+st.divider()
+
+
+# =========================================================
+# ADD STOCK
+# =========================================================
+
+st.subheader(
+    f"📁 {selected_watchlist}"
+)
+
+col1, col2 = st.columns([4, 1])
+
+with col1:
+
+    ticker_input = st.text_input(
+        "Add stock",
+        placeholder="AAPL, NVDA, RELIANCE.NS, TCS.NS...",
+        label_visibility="collapsed"
+    )
+
+with col2:
+
+    add_stock = st.button(
+        "➕ Add Stock",
+        width="stretch"
+    )
+
+
+# =========================================================
+# ADD STOCK LOGIC
+# =========================================================
+
+if add_stock:
+
+    ticker_input = ticker_input.strip().upper()
+
+    if not ticker_input:
+
+        st.warning(
+            "Please enter a stock ticker."
+        )
+
+    elif ticker_input in st.session_state.watchlists[
+        selected_watchlist
+    ]:
+
+        st.warning(
+            f"{ticker_input} is already in this watchlist."
+        )
+
+    else:
+
+        try:
+
+            stock = yf.Ticker(
+                ticker_input
+            )
+
+            test_data = stock.history(
+                period="5d"
+            )
+
+            if test_data.empty:
+
+                st.error(
+                    f"Could not find {ticker_input}."
+                )
+
+            else:
+
+                st.session_state.watchlists[
+                    selected_watchlist
+                ].append(
+                    ticker_input
+                )
+
+                save_watchlists()
+
+                st.success(
+                    f"✅ {ticker_input} added!"
+                )
+
+                st.rerun()
+
+        except Exception as e:
+
+            st.error(
+                f"Could not add {ticker_input}: {e}"
+            )
+
+
+# =========================================================
+# WATCHLIST
+# =========================================================
+
+stocks = st.session_state.watchlists[
+    selected_watchlist
+]
+
+
+if not stocks:
+
+    st.info(
+        "Your watchlist is empty. Add a stock above."
+    )
+
+else:
+
+    st.write("### 📊 Your Stocks")
+
+    for ticker in stocks:
+
+        try:
+
+            stock = yf.Ticker(
+                ticker
+            )
+
+            data = stock.history(
+                period="5d"
+            )
+
+            if data.empty:
+
+                st.warning(
+                    f"No data available for {ticker}"
+                )
+
+                continue
+
+
+            current_price = float(
+                data["Close"].iloc[-1]
+            )
+
+            previous_price = float(
+                data["Close"].iloc[-2]
+            )
+
+
+            change = (
+                current_price
+                - previous_price
+            )
+
+
+            change_percent = (
+                change
+                / previous_price
+            ) * 100
+
+
+            # ---------------------------------------------
+            # CURRENCY
+            # ---------------------------------------------
+
+            if (
+                ticker.endswith(".NS")
+                or ticker.endswith(".BO")
+            ):
+
+                price_text = (
+                    f"₹{current_price:,.2f}"
+                )
+
+                change_text = (
+                    f"₹{change:+,.2f}"
+                )
+
+            else:
+
+                price_text = (
+                    f"${current_price:,.2f}"
+                )
+
+                change_text = (
+                    f"${change:+,.2f}"
+                )
+
+
+            # ---------------------------------------------
+            # STOCK ROW
+            # ---------------------------------------------
+
+            col1, col2, col3, col4 = st.columns(
+                [2, 2, 2, 1]
+            )
+
+
+            with col1:
+
+                st.write(
+                    f"**{ticker}**"
+                )
+
+
+            with col2:
+
+                st.write(
+                    f"**{price_text}**"
+                )
+
+
+            with col3:
+
+                if change >= 0:
+
+                    st.success(
+                        f"▲ {change_text} "
+                        f"({change_percent:+.2f}%)"
+                    )
+
+                else:
+
+                    st.error(
+                        f"▼ {change_text} "
+                        f"({change_percent:.2f}%)"
+                    )
+
+
+            with col4:
+
+                if st.button(
+                    "🗑️",
+                    key=f"delete_{selected_watchlist}_{ticker}"
+                ):
+
+                    st.session_state.watchlists[
+                        selected_watchlist
+                    ].remove(ticker)
+
+                    save_watchlists()
+
+                    st.rerun()
+
+
+            st.divider()
+
+
+        except Exception as e:
+
+            st.error(
+                f"Could not load {ticker}: {e}"
+            )
+
+
+# =========================================================
+# STOCK ANALYSIS
+# =========================================================
+
+st.subheader("🔎 Stock Analysis")
+
+
+analysis_ticker = st.text_input(
+    "Enter a ticker",
+    placeholder="AAPL, NVDA, TSLA, RELIANCE.NS...",
+    key="analysis"
+)
+
+
+if analysis_ticker:
+
+    analysis_ticker = (
+        analysis_ticker
+        .strip()
+        .upper()
+    )
+
+
+    # =====================================================
+    # TIME PERIOD
+    # =====================================================
+
+    period_options = {
+
+        "1D": ("1d", "5m"),
+
+        "1W": ("5d", "30m"),
+
+        "1M": ("1mo", "1d"),
+
+        "6M": ("6mo", "1d"),
+
+        "1Y": ("1y", "1d"),
+
+        "5Y": ("5y", "1wk")
+    }
+
+
+    selected_period = st.radio(
+        "Time period",
+        list(period_options.keys()),
+        horizontal=True,
+        key="chart_period"
+    )
+
+
+    period, interval = period_options[
+        selected_period
+    ]
+
+
+    try:
+
+        stock = yf.Ticker(
+            analysis_ticker
+        )
+
+
+        data = stock.history(
+            period=period,
+            interval=interval
+        )
+
+
+        # =================================================
+        # CHECK DATA
+        # =================================================
+
+        if data.empty:
+
+            st.error(
+                f"No data found for {analysis_ticker}."
+            )
+
+        else:
+
+            # =============================================
+            # PRICE CALCULATION
+            # =============================================
+
+            latest_price = float(
+                data["Close"].iloc[-1]
+            )
+
+
+            if len(data) > 1:
+
+                first_price = float(
+                    data["Close"].iloc[0]
+                )
+
+                change = (
+                    latest_price
+                    - first_price
+                )
+
+                change_percent = (
+                    change
+                    / first_price
+                ) * 100
+
+            else:
+
+                change = 0
+
+                change_percent = 0
+
+
+            # =============================================
+            # CURRENCY
+            # =============================================
+
+            is_indian_stock = (
+                analysis_ticker.endswith(".NS")
+                or analysis_ticker.endswith(".BO")
+            )
+
+
+            if is_indian_stock:
+
+                currency_symbol = "₹"
+
+            else:
+
+                currency_symbol = "$"
+
+
+            # =============================================
+            # PRICE CARDS
+            # =============================================
+
+            col1, col2, col3 = st.columns(3)
+
+
+            with col1:
+
+                st.metric(
+                    "Current Price",
+                    f"{currency_symbol}{latest_price:,.2f}"
+                )
+
+
+            with col2:
+
+                st.metric(
+                    f"{selected_period} Change",
+                    f"{currency_symbol}{change:+,.2f}"
+                )
+
+
+            with col3:
+
+                st.metric(
+                    f"{selected_period} Change %",
+                    f"{change_percent:+.2f}%"
+                )
+
+
+            st.divider()
+
+
+            # =============================================
+            # CHART TYPE
+            # =============================================
+
+            chart_type = st.radio(
+                "Chart type",
+                [
+                    "📈 Line",
+                    "🕯️ Candlestick"
+                ],
+                horizontal=True
+            )
+
+
+            # =============================================
+            # MAIN GRAPH
+            # =============================================
+
+            fig = go.Figure()
+
+
+            if chart_type == "📈 Line":
+
+                fig.add_trace(
+                    go.Scatter(
+                        x=data.index,
+                        y=data["Close"],
+                        mode="lines",
+                        name="Price"
+                    )
+                )
+
+
+            else:
+
+                fig.add_trace(
+                    go.Candlestick(
+                        x=data.index,
+                        open=data["Open"],
+                        high=data["High"],
+                        low=data["Low"],
+                        close=data["Close"],
+                        name="Price"
+                    )
+                )
+
+
+            fig.update_layout(
+
+                title=(
+                    f"{analysis_ticker} "
+                    f"— {selected_period}"
+                ),
+
+                height=500,
+
+                hovermode="x unified",
+
+                xaxis_title="Date",
+
+                yaxis_title="Price",
+
+                xaxis_rangeslider_visible=False,
+
+                margin=dict(
+                    l=20,
+                    r=20,
+                    t=60,
+                    b=20
+                )
+            )
+
+
+            st.plotly_chart(
+                fig,
+                width="stretch"
+            )
+
+
+            # =============================================
+            # VOLUME GRAPH
+            # =============================================
+
+            st.write("### 📊 Volume")
+
+
+            volume_fig = go.Figure()
+
+
+            volume_fig.add_trace(
+                go.Bar(
+                    x=data.index,
+                    y=data["Volume"],
+                    name="Volume"
+                )
+            )
+
+
+            volume_fig.update_layout(
+
+                height=250,
+
+                xaxis_title="Date",
+
+                yaxis_title="Volume",
+
+                margin=dict(
+                    l=20,
+                    r=20,
+                    t=20,
+                    b=20
+                )
+            )
+
+
+            st.plotly_chart(
+                volume_fig,
+                width="stretch"
+            )
+
+
+            # =============================================
+            # ADD TO WATCHLIST
+            # =============================================
+
+            st.write(
+                "### ⭐ Add to Watchlist"
+            )
+
+
+            target_watchlist = st.selectbox(
+                "Choose watchlist",
+                list(
+                    st.session_state.watchlists.keys()
+                ),
+                key="target_watchlist"
+            )
+
+
+            if st.button(
+                "⭐ Add to Watchlist"
+            ):
+
+                if analysis_ticker not in (
+                    st.session_state.watchlists[
+                        target_watchlist
+                    ]
+                ):
+
+                    st.session_state.watchlists[
+                        target_watchlist
+                    ].append(
+                        analysis_ticker
+                    )
+
+
+                    save_watchlists()
+
+
+                    st.success(
+                        f"{analysis_ticker} added to "
+                        f"{target_watchlist}"
+                    )
+
+
+                    st.rerun()
+
+
+                else:
+
+                    st.info(
+                        "This stock is already "
+                        "in that watchlist."
+                    )
+
+
+    except Exception as e:
+
+        st.error(
+            f"Unable to analyze "
+            f"{analysis_ticker}: {e}"
+        )
+
+
+# =========================================================
+# FOOTER
+# =========================================================
+
+st.divider()
+
+st.caption(
+    "StockIQ • Market data provided by Yahoo Finance via yfinance"
+)
